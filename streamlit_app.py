@@ -2,39 +2,98 @@ import altair as alt
 import numpy as np
 import pandas as pd
 import streamlit as st
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, accuracy_score
 
-"""
-# Welcome to Streamlit!
+# Title and description
+st.title("Netflix Movies and TV Shows Analysis")
+st.write("This application analyzes Netflix content and predicts content type and duration.")
 
-Edit `/streamlit_app.py` to customize this app to your heart's desire :heart:.
-If you have any questions, checkout our [documentation](https://docs.streamlit.io) and [community
-forums](https://discuss.streamlit.io).
+# Upload dataset
+uploaded_file = st.file_uploader("Upload Netflix Dataset", type=["csv"])
 
-In the meantime, below is an example of what you can do with just a few lines of code:
-"""
+if uploaded_file is not None:
+    df = pd.read_csv(uploaded_file)
+    st.write("Dataset Uploaded Successfully!")
 
-num_points = st.slider("Number of points in spiral", 1, 10000, 1100)
-num_turns = st.slider("Number of turns in spiral", 1, 300, 31)
+    # Show dataset
+    if st.checkbox("Show Raw Data"):
+        st.write(df.head())
 
-indices = np.linspace(0, 1, num_points)
-theta = 2 * np.pi * num_turns * indices
-radius = indices
+    # Data preprocessing
+    df['country'] = df['country'].fillna(df['country'].mode()[0])
+    df['cast'].fillna('No Data', inplace=True)
+    df['director'].fillna('No Data', inplace=True)
+    df.dropna(inplace=True)
+    df['date_added'] = pd.to_datetime(df['date_added'])
+    df['month_added'] = df['date_added'].dt.month_name()
+    df['year_added'] = df['date_added'].dt.year
 
-x = radius * np.cos(theta)
-y = radius * np.sin(theta)
+    # Show processed data
+    if st.checkbox("Show Processed Data"):
+        st.write(df.head())
 
-df = pd.DataFrame({
-    "x": x,
-    "y": y,
-    "idx": indices,
-    "rand": np.random.randn(num_points),
-})
+    # Prediction section
+    st.header("Prediction")
+    prediction_type = st.selectbox("Select Prediction Type", ("Content Type", "Duration"))
 
-st.altair_chart(alt.Chart(df, height=700, width=700)
-    .mark_point(filled=True)
-    .encode(
-        x=alt.X("x", axis=None),
-        y=alt.Y("y", axis=None),
-        color=alt.Color("idx", legend=None, scale=alt.Scale()),
-        size=alt.Size("rand", legend=None, scale=alt.Scale(range=[1, 150])),
-    ))
+    if prediction_type == "Content Type":
+        # Prepare data
+        X = df[['country', 'rating', 'duration', 'release_year']]
+        X = pd.get_dummies(X, drop_first=True)
+        y = df['type'].map({'Movie': 0, 'TV Show': 1})
+
+        # Train model
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        clf = RandomForestClassifier(random_state=42)
+        clf.fit(X_train, y_train)
+
+        # User input
+        country = st.selectbox("Country", df['country'].unique())
+        rating = st.selectbox("Rating", df['rating'].unique())
+        duration = st.number_input("Duration (minutes)")
+        release_year = st.number_input("Release Year", min_value=int(df['release_year'].min()), max_value=int(df['release_year'].max()), step=1)
+
+        # Prediction
+        if st.button("Predict Content Type"):
+            user_data = pd.DataFrame({
+                'country': [country],
+                'rating': [rating],
+                'duration': [duration],
+                'release_year': [release_year]
+            })
+            user_data = pd.get_dummies(user_data, drop_first=True)
+            prediction = clf.predict(user_data)[0]
+            st.write(f"The predicted content type is: {'Movie' if prediction == 0 else 'TV Show'}")
+
+    elif prediction_type == "Duration":
+        # Filter data for movies
+        movies = df[df['type'] == 'Movie']
+        movies['duration'] = movies['duration'].str.replace(' min', '').astype(int)
+
+        # Prepare data
+        X = movies[['country', 'rating', 'release_year']]
+        X = pd.get_dummies(X, drop_first=True)
+        y = movies['duration']
+
+        # Train model
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        reg = RandomForestRegressor(random_state=42)
+        reg.fit(X_train, y_train)
+
+        # User input
+        country = st.selectbox("Country", df['country'].unique())
+        rating = st.selectbox("Rating", df['rating'].unique())
+        release_year = st.number_input("Release Year", min_value=int(df['release_year'].min()), max_value=int(df['release_year'].max()), step=1)
+
+        # Prediction
+        if st.button("Predict Duration"):
+            user_data = pd.DataFrame({
+                'country': [country],
+                'rating': [rating],
+                'release_year': [release_year]
+            })
+            user_data = pd.get_dummies(user_data, drop_first=True)
+            prediction = reg.predict(user_data)[0]
+            st.write(f"The predicted duration is: {int(prediction)} minutes")
